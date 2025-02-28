@@ -10,8 +10,8 @@
 #define MAP_WIDTH 40
 #define MAP_HEIGHT 20
 #define NUM_ENEMIES 10
-#define WALL_DENSITY 30
-#define MAX_PROJECTILES 100
+#define WALL_DENSITY 30 // less == more dense
+#define MAX_PROJECTILES 100 // how many projs can exist at the same time
 
 // character representations
 #define PLAYER_CHAR '@'
@@ -55,8 +55,8 @@ typedef struct {
 
 typedef struct {
     Entity base;
-    float dx;
-    float dy;
+    float dx; // x direction
+    float dy; // y direction
     float speed;
     bool is_enemy;
 } Projectile;
@@ -95,10 +95,12 @@ double get_time() {
     return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
+// initialize color pairs for ncruses
 void setup_colors() {
     start_color();
     use_default_colors();
-
+    
+    // color pair, foreground color, background color (-1 for none)
     init_pair(COLOR_PLAYER, COLOR_GREEN, -1);    
     init_pair(COLOR_ENEMY, COLOR_RED, -1);
     init_pair(COLOR_WALL, COLOR_CYAN, -1);
@@ -109,6 +111,7 @@ void setup_colors() {
     init_pair(COLOR_WIN_MESSAGE, COLOR_GREEN, -1);
 }
 
+// generate map with walls and floor tiles
 void generate_map(Game *game) {
     // initialize map with floor tiles
     for (int y = 0; y < MAP_HEIGHT; y++) {
@@ -117,12 +120,13 @@ void generate_map(Game *game) {
         }
     }
 
-    // create border walls
+    // create border walls (top and bottom)
     for (int x = 0; x < MAP_WIDTH; x++) {
         game->map[0][x] = WALL_CHAR; // top border
         game->map[MAP_HEIGHT-1][x] = WALL_CHAR; // top bottom
     }
 
+    // create border walls (left and right)
     for (int y = 0; y < MAP_HEIGHT; y++) {
         game->map[y][0] = WALL_CHAR; // left border
         game->map[y][MAP_WIDTH-1] = WALL_CHAR; // right border
@@ -130,17 +134,21 @@ void generate_map(Game *game) {
 
     // random walls in arena
     for (int i = 0; i < (MAP_WIDTH * MAP_HEIGHT / WALL_DENSITY); i++) {
+        // generate random x and y then assign wall to it
         int x = rand() % (MAP_WIDTH - 2) + 1;
         int y = rand() % (MAP_HEIGHT - 2) + 1;
         game->map[y][x] = WALL_CHAR;
     }
 }
 
+// spawn player at a random floor tile
 void spawn_player(Game *game) {
     while (1) {
+        // random x and y coordinates
         int x = rand() % (MAP_WIDTH - 2) + 1;
         int y = rand() % (MAP_HEIGHT - 2) + 1;
 
+        // spawn player if floor tile then exit loop
         if (game->map[y][x] == FLOOR_CHAR) {
             game->player.base.x = x;
             game->player.base.y = y;
@@ -153,6 +161,7 @@ void spawn_player(Game *game) {
     }
 }
 
+// spawn enemies at random floor tiles
 void spawn_enemies(Game *game) {
     game->num_enemies = 0;
     for (int i = 0; i < NUM_ENEMIES; i++) {
@@ -166,7 +175,7 @@ void spawn_enemies(Game *game) {
                 game->enemies[game->num_enemies].health = 50;
                 game->enemies[game->num_enemies].speed = 0.5;
                 game->enemies[game->num_enemies].last_shot_time = get_time();
-                game->enemies[game->num_enemies].shoot_delay = 1.0 + (rand() % 200) / 100.0;
+                game->enemies[game->num_enemies].shoot_delay = 1.0 + (rand() % 200) / 100.0; // set random shooting delay between 1-2.99 seconds
                 
                 game->num_enemies++;
                 break;
@@ -175,10 +184,13 @@ void spawn_enemies(Game *game) {
     }
 }
 
+// move player/enemy if new position is valid
 void move_entity(Game *game, Entity *entity, float dx, float dy) {
     int new_x = (int)(entity->x + dx);
     int new_y = (int)(entity->y + dy);
+    // check if new position within boundaries
     if (new_x >= 0 && new_x < MAP_WIDTH && new_y >= 0 && new_y < MAP_HEIGHT) {
+        // check if new position is on a floor piece
         if (game->map[new_y][new_x] == FLOOR_CHAR) {
             entity->x = new_x;
             entity->y = new_y;
@@ -187,8 +199,9 @@ void move_entity(Game *game, Entity *entity, float dx, float dy) {
 }
 
 void handle_input(Game *game) {
-    int key = getch();
-
+    int key = getch(); // grab input key
+    
+    // 1 = up/right, -1 = down/left, 0 = stand still
     switch (key) {
         case KEY_UP:
             move_entity(game, &game->player.base, 0, -1);
@@ -233,37 +246,47 @@ void handle_input(Game *game) {
 }
 
 void shoot(Game *game, float x, float y, float dx, float dy, bool is_enemy) {
+    // if not enemy and ammo > 0, decrease ammo by 1
     if (!is_enemy) {
-        if (game->player.ammo <= 0) return;
+        if (game->player.ammo <= 0) return; // exit function if no ammo
         game->player.ammo--;
     }
+    // if more projectiles exist then allowed, exit function
     if (game->projectile_count >= MAX_PROJECTILES) return;
+    
+    // create and initialize projectiles
     Projectile *projectile = &game->projectiles[game->projectile_count++];
     projectile->base.x = x;
     projectile->base.y = y;
-    projectile->base.character = is_enemy ? ENEMY_ARROW_CHAR : ARROW_CHAR;
+    projectile->base.character = is_enemy ? ENEMY_ARROW_CHAR : ARROW_CHAR; // set char representation
     projectile->dx = dx;
     projectile->dy = dy;
     projectile->speed = 2.0;
-    projectile->is_enemy = is_enemy;
+    projectile->is_enemy = is_enemy; // whether projectile belongs to player or enemy
 }
 
+// update movement and shooting behaviour of all enemies
 void update_enemies(Game *game, float delta_time) {
     double current_time = get_time();
+    // loop through all enemies
     for (int i = 0; i < game->num_enemies; i++) {
         Enemy *enemy = &game->enemies[i];
-        // movement towards player with slight randomness
+        // calculate direction towards player
         float dx = game->player.base.x - enemy->base.x;
         float dy = game->player.base.y - enemy->base.y;
         float distance = sqrt(dx*dx + dy*dy);
+        // normalize distance so diagonal movement isnt faster than horizontal/vertical
         if (distance > 0) {
             dx /= distance;
             dy /= distance;
         }
-        // add slight random movement
+        // add slight randomness to movement
         dx += (rand() % 100 - 50) / 500.0;
         dy += (rand() % 100 - 50) / 500.0;
-
+        
+        // calculate new position
+        // multiply direction by enemy speed to calc how far the enemy should move per second
+        // multiply by delta time to ensure frame-rate independent movement (smoother)
         float new_x = enemy->base.x + dx * enemy->speed * delta_time;
         float new_y = enemy->base.y + dy * enemy->speed * delta_time;
         int int_new_x = (int)new_x;
@@ -275,29 +298,35 @@ void update_enemies(Game *game, float delta_time) {
                 enemy->base.y = new_y;
             }
         // shooting
+        // if last shot time exceeds shoot delay, shoot again
         if (current_time - enemy->last_shot_time >= enemy->shoot_delay) {
             float shot_dx = game->player.base.x - enemy->base.x;
             float shot_dy = game->player.base.y - enemy->base.y;
             float shot_distance = sqrt(shot_dx*shot_dx + shot_dy*shot_dy);
+            // normalize direction
             if (shot_distance > 0) {
                 shot_dx /= shot_distance;
                 shot_dy /= shot_distance;
             }
             shoot(game, enemy->base.x, enemy->base.y, shot_dx, shot_dy, true);
-            enemy->last_shot_time = current_time;
-            enemy->shoot_delay = 1.0 + (rand() % 200) / 100.0;
+            enemy->last_shot_time = current_time; // reset last_shot_time after shooting
+            enemy->shoot_delay = 1.0 + (rand() % 200) / 100.0; // set new shoot delay
         }
     }
 }
 
+// update state of all projectiles (movement, collision detection, removal)
 void update_projectiles(Game *game, float delta_time) {
+    // loop through all projectiles
     for (int i = 0; i < game->projectile_count; i++) {
         Projectile *projectile = &game->projectiles[i];
+        // update projectile position
         projectile->base.x += projectile->dx * projectile->speed * delta_time;
         projectile->base.y += projectile->dy * projectile->speed * delta_time;
+        // convert projectile position to int to check collisions with map grid
         int x = (int)projectile->base.x;
         int y = (int)projectile->base.y;
-        // check bounds
+        // if projectile outside map bounds, remove projectile
         if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) {
             // remove projectile
             memmove(projectile, projectile + 1,
@@ -306,7 +335,7 @@ void update_projectiles(Game *game, float delta_time) {
             i--;
             continue;
         }
-        // wall collision
+        // remove projectile if wall collision
         if (game->map[y][x] == WALL_CHAR) {
             memmove(projectile, projectile + 1,
                     (game->projectile_count - i - 1) * sizeof(Projectile));
@@ -314,7 +343,7 @@ void update_projectiles(Game *game, float delta_time) {
             i--;
             continue;
         }
-        // player hit by enemy projectile
+        // remove projectile and decrement player health if enemy projectile hits player
         if (projectile->is_enemy) {
             if ((int)game->player.base.x == x && (int)game->player.base.y == y) {
                 game->player.health -= 10;
@@ -328,7 +357,7 @@ void update_projectiles(Game *game, float delta_time) {
                 continue;
             }
         }
-        // player projectile hitting enemy
+        // remove enemy and projectile if player projectile hits enemy
         else {
             for (int j = 0; j < game->num_enemies; j++) {
                 if ((int)game->enemies[j].base.x == x &&
@@ -340,7 +369,7 @@ void update_projectiles(Game *game, float delta_time) {
                         memmove(projectile, projectile + 1,
                             (game->projectile_count - i - 1) * sizeof(Projectile));
                         game->projectile_count--;
-                        game->player.ammo += 2;
+                        game->player.ammo += 2; // bonus ammo reward
                         i--;
                         break;
                     }
